@@ -7,60 +7,72 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Kvitto.Core.Entities;
 using Kvitto.Data.Data;
+using AutoMapper;
+using Kvitto.Core.Repositories;
+using Kvitto.Common.Dto;
+using Microsoft.AspNetCore.JsonPatch;
 
 namespace Kvitto.Api.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/Receipts")]
     [ApiController]
     public class ReceiptsController : ControllerBase
     {
-        private readonly KvittoApiContext _context;
+        private readonly IUoW uow;
+        private readonly IMapper mapper;
 
-        public ReceiptsController(KvittoApiContext context)
+        public ReceiptsController(IUoW uow, IMapper mapper)
         {
-            _context = context;
+            this.uow = uow;
+            this.mapper = mapper;
         }
 
         // GET: api/Receipts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Receipt>>> GetReceipt()
+        public async Task<ActionResult<IEnumerable<ReceiptDto>>> GetReceipts()
         {
-            return await _context.Receipt.ToListAsync();
+            var receipts = await uow.ReceiptRepository.GetAllReceipts();
+            var dto = mapper.Map<IEnumerable<ReceiptDto>>(receipts);
+            return Ok(dto);
         }
 
         // GET: api/Receipts/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Receipt>> GetReceipt(int id)
+        public async Task<ActionResult<ReceiptDto>> GetReceipt(int id)
         {
-            var receipt = await _context.Receipt.FindAsync(id);
+            var receipt = await uow.ReceiptRepository.FindAsync(id);
+            var dto = mapper.Map<ReceiptDto>(receipt);
 
             if (receipt == null)
             {
                 return NotFound();
             }
 
-            return receipt;
+            return Ok(dto);
         }
 
         // PUT: api/Receipts/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutReceipt(int id, Receipt receipt)
+        public async Task<ActionResult<ReceiptDto>> PutReceipt(int id, ReceiptDto receiptDto)
         {
-            if (id != receipt.Id)
+            if (id != receiptDto.Id)
             {
                 return BadRequest();
             }
 
-            _context.Entry(receipt).State = EntityState.Modified;
+            var receipt = mapper.Map<Receipt>(receiptDto);
+            uow.ReceiptRepository.Update(receipt);
 
+            ReceiptDto dto;
             try
             {
-                await _context.SaveChangesAsync();
+                await uow.CompleteAsync();
+                dto = mapper.Map<ReceiptDto>(receipt);
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!ReceiptExists(id))
+                if (!await ReceiptExists(id))
                 {
                     return NotFound();
                 }
@@ -70,39 +82,84 @@ namespace Kvitto.Api.Controllers
                 }
             }
 
-            return NoContent();
+            return Ok(dto);
+        }
+
+        // PATCH: api/Receipts/5
+        [HttpPatch("{receiptId}")]
+        public async Task<ActionResult<ReceiptDto>> PatchReceipt(int receiptId, JsonPatchDocument<ReceiptDto> patchDocument)
+        {
+            var receiptEntity = await uow.ReceiptRepository.FindAsync(receiptId);
+            if (receiptEntity is null)
+            {
+                return BadRequest();
+            }
+
+            var dto = mapper.Map<ReceiptDto>(receiptEntity);
+
+            patchDocument.ApplyTo(dto, ModelState);
+
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            if (!TryValidateModel(dto))
+                return BadRequest(ModelState);
+
+            mapper.Map(dto, receiptEntity);
+
+            try
+            {
+                await uow.CompleteAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!await ReceiptExists(receiptId))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return Ok(dto);
         }
 
         // POST: api/Receipts
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Receipt>> PostReceipt(Receipt receipt)
+        public async Task<ActionResult<ReceiptDto>> PostReceipt(ReceiptDto insertReceipt)
         {
-            _context.Receipt.Add(receipt);
-            await _context.SaveChangesAsync();
+            var enitityReceipt = mapper.Map<Receipt>(insertReceipt);
+            uow.ReceiptRepository.Add(enitityReceipt);
+            await uow.CompleteAsync();
 
-            return CreatedAtAction("GetReceipt", new { id = receipt.Id }, receipt);
+            //halvonödig mappning tillbaka? kan bara skicka tillbaka insertReceipt, men skulle kunna vara om ReceiptRepository ändrar mer än Id i framtiden
+            var dto = mapper.Map<ReceiptDto>(enitityReceipt);
+
+            return CreatedAtAction("GetReceipt", new { id = enitityReceipt.Id }, dto);
         }
 
         // DELETE: api/Receipts/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteReceipt(int id)
         {
-            var receipt = await _context.Receipt.FindAsync(id);
+            var receipt = await uow.ReceiptRepository.FindAsync(id);
             if (receipt == null)
             {
                 return NotFound();
             }
 
-            _context.Receipt.Remove(receipt);
-            await _context.SaveChangesAsync();
+            uow.ReceiptRepository.Remove(receipt);
+            await uow.CompleteAsync();
 
             return NoContent();
         }
 
-        private bool ReceiptExists(int id)
+        private async Task<bool> ReceiptExists(int id)
         {
-            return _context.Receipt.Any(e => e.Id == id);
+            return await uow.ReceiptRepository.AnyAsync(id);
         }
     }
 }
