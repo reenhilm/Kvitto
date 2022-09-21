@@ -13,7 +13,8 @@ namespace Kvitto.Data.Data
             : base(options)
         {
         }
-
         public DbSet<Receipt> Receipt { get; set; } = default!;
+
+        public DbSet<UploadedFile> UploadedFile { get; set; } = default!;
     }
 }

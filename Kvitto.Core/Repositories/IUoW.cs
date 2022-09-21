@@ -9,6 +9,7 @@ namespace Kvitto.Core.Repositories
     public interface IUoW
     {
         IReceiptRepository ReceiptRepository { get; }
+        IUploadedFileRepository UploadedFileRepository { get; }
 
         Task CompleteAsync();
     }

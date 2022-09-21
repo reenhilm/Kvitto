@@ -1,4 +1,5 @@
-﻿using Kvitto.Core.Repositories;
+﻿using Kvitto.Api.Extensions;
+using Kvitto.Core.Repositories;
 using Kvitto.Data.Data;
 using Kvitto.Data.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+app.SeedDataAsync().GetAwaiter().GetResult();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

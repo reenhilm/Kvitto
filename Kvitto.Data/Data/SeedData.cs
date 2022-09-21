@@ -35,6 +35,18 @@ namespace Kvitto.Data.Data
                     }
                 });
 
+            uow.UploadedFileRepository.Add(
+                new UploadedFile()
+                {
+                    ContentType = "image/x-png"                    
+                });
+
+            uow.UploadedFileRepository.Add(
+                new UploadedFile()
+                {
+                    ContentType = "image/x-png"
+                });
+
             await uow.CompleteAsync();
         }
     }

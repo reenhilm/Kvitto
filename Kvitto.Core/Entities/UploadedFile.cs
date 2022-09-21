@@ -10,8 +10,8 @@ namespace Kvitto.Core.Entities
         public string ContentType { get; set; } = default!;
 
         //Nav prop
-        public Receipt Receipt { get; set; } = default!;
+        public Receipt? Receipt { get; set; } = default!;
         //FK
-        public int ReceiptId { get; set; }
+        public int? ReceiptId { get; set; }
     }
 }

@@ -11,6 +11,7 @@ namespace Kvitto.Data.Data.Repositories
     public class UoW : IDevUoW, IUoW
     {
         public IReceiptRepository ReceiptRepository { get; }
+        public IUploadedFileRepository UploadedFileRepository { get; }
 
         private readonly KvittoApiContext db;
 
@@ -18,6 +19,7 @@ namespace Kvitto.Data.Data.Repositories
         {
             this.db = db;
             ReceiptRepository = new ReceiptRepository(db);
+            UploadedFileRepository = new UploadedFileRepository(db);
         }
 
         public async Task CompleteAsync()
