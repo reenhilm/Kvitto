@@ -1,5 +1,6 @@
 ﻿using Kvitto.Api.Extensions;
 using Kvitto.Core.Repositories;
+using Kvitto.Data;
 using Kvitto.Data.Data;
 using Kvitto.Data.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
