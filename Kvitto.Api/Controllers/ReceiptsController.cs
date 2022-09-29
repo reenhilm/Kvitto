@@ -11,6 +11,10 @@ using AutoMapper;
 using Kvitto.Core.Repositories;
 using Kvitto.Common.Dto;
 using Microsoft.AspNetCore.JsonPatch;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.Extensions.Options;
 
 namespace Kvitto.Api.Controllers
 {
@@ -29,6 +33,7 @@ namespace Kvitto.Api.Controllers
 
         // GET: api/Receipts
         [HttpGet]
+        [HttpHead]
         public async Task<ActionResult<IEnumerable<ReceiptDto>>> GetReceipts()
         {
             var receipts = await uow.ReceiptRepository.GetAllReceipts();
@@ -54,21 +59,102 @@ namespace Kvitto.Api.Controllers
         // PUT: api/Receipts/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<ActionResult<ReceiptDto>> PutReceipt(int id, ReceiptDto receiptDto)
+        public async Task<ActionResult<ReceiptDto>> PutReceipt(int id, ReceiptForUpdateDto receipt)
         {
-            if (id != receiptDto.Id)
+            if (receipt is null)
             {
-                return BadRequest();
+                throw new ArgumentNullException(nameof(receipt));
             }
 
-            var receipt = mapper.Map<Receipt>(receiptDto);
-            uow.ReceiptRepository.Update(receipt);
+            var receiptFromRepo = await uow.ReceiptRepository.GetReceipt(id);
 
-            ReceiptDto dto;
+            if (receiptFromRepo == null)
+            {
+                var receiptToAdd = mapper.Map<Receipt>(receipt);
+                receiptToAdd.Id = id;
+
+                uow.ReceiptRepository.Add(receiptToAdd);
+                await uow.CompleteAsync();
+
+                var receiptToReturn = mapper.Map<ReceiptDto>(receiptToAdd);
+
+                return CreatedAtAction("GetReceipt",
+                    new { id = receiptToReturn.Id },
+                    receiptToReturn);
+            }
+
+            // map the entity to a CourseForUpdateDto
+            // apply the updated field values to that dto
+            // map the CourseForUpdateDto back to an entity
+            mapper.Map(receipt, receiptFromRepo);
+
+            uow.ReceiptRepository.Update(receiptFromRepo);
             try
             {
                 await uow.CompleteAsync();
-                dto = mapper.Map<ReceiptDto>(receipt);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!await ReceiptExists(id))
+                {
+                    return NotFound();
+    }
+                else
+                {
+                    throw;
+                }
+            }
+            return NoContent();
+        }
+
+        [HttpOptions]
+        public IActionResult GetReceiptsOptions()
+        {
+            Response.Headers.Add("Allow", "GET,PUT,PATCH,OPTIONS,POST");
+            return Ok();
+        }
+
+        // PATCH: api/Receipts/5
+        [HttpPatch("{id}")]
+        public async Task<ActionResult<ReceiptDto>> PartiallyUpdateReceipt(int id, JsonPatchDocument<ReceiptForUpdateDto> patchDocument)
+        {
+            var receiptFromRepo = await uow.ReceiptRepository.FindAsync(id);
+            if (receiptFromRepo is null)
+            {
+                var receiptDto = new ReceiptForUpdateDto();
+                patchDocument.ApplyTo(receiptDto, ModelState);
+
+                if (!TryValidateModel(receiptDto))
+                {
+                    return ValidationProblem(ModelState);
+                }
+
+                var receiptToAdd = mapper.Map<Receipt>(receiptDto);
+                receiptToAdd.Id = id;
+
+                uow.ReceiptRepository.Add(receiptToAdd);
+                await uow.CompleteAsync();
+
+                var receiptToReturn = mapper.Map<ReceiptDto>(receiptToAdd);
+
+                return CreatedAtAction("GetReceipt",
+                    new { id = receiptToReturn.Id },
+                    receiptToReturn);
+            }
+            var receiptToPatch = mapper.Map<ReceiptForUpdateDto>(receiptFromRepo);
+            // add validation
+            patchDocument.ApplyTo(receiptToPatch, ModelState);
+
+            if (!TryValidateModel(receiptToPatch))
+                return ValidationProblem(ModelState);
+
+
+            mapper.Map(receiptToPatch, receiptFromRepo);
+
+            uow.ReceiptRepository.Update(receiptFromRepo);
+            try
+            {
+                await uow.CompleteAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -81,55 +167,13 @@ namespace Kvitto.Api.Controllers
                     throw;
                 }
             }
-
-            return Ok(dto);
-        }
-
-        // PATCH: api/Receipts/5
-        [HttpPatch("{receiptId}")]
-        public async Task<ActionResult<ReceiptDto>> PatchReceipt(int receiptId, JsonPatchDocument<ReceiptDto> patchDocument)
-        {
-            var receiptEntity = await uow.ReceiptRepository.FindAsync(receiptId);
-            if (receiptEntity is null)
-            {
-                return BadRequest();
-            }
-
-            var dto = mapper.Map<ReceiptDto>(receiptEntity);
-
-            patchDocument.ApplyTo(dto, ModelState);
-
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            if (!TryValidateModel(dto))
-                return BadRequest(ModelState);
-
-            mapper.Map(dto, receiptEntity);
-
-            try
-            {
-                await uow.CompleteAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!await ReceiptExists(receiptId))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return Ok(dto);
+            return NoContent();
         }
 
         // POST: api/Receipts
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<ReceiptDto>> PostReceipt(ReceiptDto insertReceipt)
+        public async Task<ActionResult<ReceiptDto>> CreateReceipt(ReceiptForCreationDto insertReceipt)
         {
             var enitityReceipt = mapper.Map<Receipt>(insertReceipt);
             uow.ReceiptRepository.Add(enitityReceipt);
@@ -155,11 +199,19 @@ namespace Kvitto.Api.Controllers
             await uow.CompleteAsync();
 
             return NoContent();
-        }
+        }     
 
         private async Task<bool> ReceiptExists(int id)
         {
             return await uow.ReceiptRepository.AnyAsync(id);
+        }
+
+        public override ActionResult ValidationProblem(
+    [ActionResultObjectValue] ModelStateDictionary modelStateDictionary)
+        {
+            var options = HttpContext.RequestServices
+                .GetRequiredService<IOptions<ApiBehaviorOptions>>();
+            return (ActionResult)options.Value.InvalidModelStateResponseFactory(ControllerContext);
         }
     }
 }

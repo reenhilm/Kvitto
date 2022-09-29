@@ -14,16 +14,15 @@ namespace Kvitto.Api.Extensions
                 uow.EnsureDeleted();
                 uow.Migrate();
 
-#pragma warning disable CS0168 // Variable is declared but never used
                 try
                 {
                     await SeedData.InitAsync(uow);
                 }
-                catch (Exception e)
+                catch (Exception ex)
                 {
-                    throw;
+                    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+                    logger.LogError(ex, "An error occurred while migrating the database.");
                 }
-#pragma warning restore CS0168 // Variable is declared but never used
             }
             return app;
         }
